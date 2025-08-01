@@ -39,7 +39,11 @@ export default function HomePage() {
     const [notification, setNotification] = useState<string>("");
 
     useEffect(() => {
-        if (!logs) return;
+        // logs가 배열이 아니거나 존재하지 않으면 early return
+        if (!logs || !Array.isArray(logs)) {
+            console.log('Logs is not an array or does not exist:', logs);
+            return;
+        }
 
         const monthlyCounts: { [key: string]: { [key: string]: number } } = {};
         const logsSortedAsc = [...logs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -82,14 +86,24 @@ export default function HomePage() {
             month: new Date().getMonth() + 1,
             parts: [{ name: newPartName, sets_done: 0, sets_target: newPartSets }],
         };
-        await fetch('/api/logs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newLog),
-        });
-        mutate('/api/logs');
-        setNewPartName("");
-        showNotification("새로운 운동 기록이 추가되었습니다.");
+        try {
+            const response = await fetch('/api/logs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newLog),
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to add log');
+            }
+            
+            mutate('/api/logs');
+            setNewPartName("");
+            showNotification("새로운 운동 기록이 추가되었습니다.");
+        } catch (error) {
+            console.error('Error adding log:', error);
+            showNotification("기록 추가에 실패했습니다.");
+        }
     };
     
     const handleAddPartToLog = async (logId: number) => {
@@ -97,14 +111,24 @@ export default function HomePage() {
         const log = processedLogs.find(l => l.id === logId);
         if (!log) return;
         const updatedParts = [...log.parts, { name: newPartName, sets_done: 0, sets_target: newPartSets }];
-        await fetch('/api/logs', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: logId, parts: updatedParts }),
-        });
-        mutate('/api/logs');
-        setNewPartName("");
-        showNotification("운동 부위가 추가되었습니다.");
+        try {
+            const response = await fetch('/api/logs', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: logId, parts: updatedParts }),
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to update log');
+            }
+            
+            mutate('/api/logs');
+            setNewPartName("");
+            showNotification("운동 부위가 추가되었습니다.");
+        } catch (error) {
+            console.error('Error updating log:', error);
+            showNotification("운동 부위 추가에 실패했습니다.");
+        }
     };
 
     const updateSets = async (logId: number, partIndex: number, delta: number) => {
@@ -114,27 +138,47 @@ export default function HomePage() {
         const currentSets = newParts[partIndex].sets_done;
         if (currentSets + delta >= 0) {
             newParts[partIndex].sets_done += delta;
-            await fetch('/api/logs', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: logId, parts: newParts }),
-            });
-            mutate('/api/logs');
+            try {
+                const response = await fetch('/api/logs', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: logId, parts: newParts }),
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to update sets');
+                }
+                
+                mutate('/api/logs');
+            } catch (error) {
+                console.error('Error updating sets:', error);
+                showNotification("세트 수정에 실패했습니다.");
+            }
         }
     };
     
     const handleDeleteLog = async (logId: number) => {
-        await fetch('/api/logs', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: logId }),
-        });
-        mutate('/api/logs');
-        showNotification("기록이 삭제되었습니다.");
+        try {
+            const response = await fetch('/api/logs', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: logId }),
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to delete log');
+            }
+            
+            mutate('/api/logs');
+            showNotification("기록이 삭제되었습니다.");
+        } catch (error) {
+            console.error('Error deleting log:', error);
+            showNotification("기록 삭제에 실패했습니다.");
+        }
     };
 
     const formatLogToString = (log: Log, index: number): string => {
-        if (!logs) return "";
+        if (!logs || !Array.isArray(logs)) return "";
         const logDate = new Date(log.created_at);
         const logYear = logDate.getFullYear();
         const logMonth = logDate.getMonth() + 1;
@@ -154,6 +198,27 @@ export default function HomePage() {
             showNotification("복사에 실패했습니다.");
         });
     };
+
+    // 에러 상태 표시
+    if (error) {
+        console.error('SWR Error:', error);
+        return (
+            <div className="bg-gray-900 text-white min-h-screen font-sans p-4 sm:p-6 lg:p-8">
+                <div className="max-w-4xl mx-auto">
+                    <div className="text-center bg-red-800 p-8 rounded-xl">
+                        <h2 className="text-2xl font-bold text-red-300 mb-4">데이터 로딩 실패</h2>
+                        <p className="text-red-200">서버 연결에 문제가 있습니다. 잠시 후 다시 시도해주세요.</p>
+                        <button 
+                            onClick={() => mutate('/api/logs')} 
+                            className="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                        >
+                            다시 시도
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="bg-gray-900 text-white min-h-screen font-sans p-4 sm:p-6 lg:p-8">
@@ -183,9 +248,8 @@ export default function HomePage() {
                 <main>
                     <h2 className="text-2xl font-semibold mb-4 text-white">운동 히스토리</h2>
                     {!logs && !error && <div className="text-center text-gray-400">데이터를 불러오는 중...</div>}
-                    {error && <div className="text-center text-red-400">데이터 로딩 실패!</div>}
-                    {logs && logs.length === 0 && <div className="text-center bg-gray-800 p-8 rounded-xl text-gray-400">아직 기록이 없습니다.</div>}
-                    {processedLogs && (
+                    {logs && Array.isArray(logs) && logs.length === 0 && <div className="text-center bg-gray-800 p-8 rounded-xl text-gray-400">아직 기록이 없습니다.</div>}
+                    {processedLogs && Array.isArray(processedLogs) && (
                         <div className="space-y-4">
                             {processedLogs.map((log, index) => (
                                 <div key={log.id} className="bg-gray-800 p-5 rounded-xl shadow-lg">
